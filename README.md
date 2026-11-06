@@ -58,8 +58,11 @@ which is `v0.5.1` plus three commits. On top of that, in order:
 14. `ServiceProvider.ReplayCache` refuses an assertion it has accepted
     before, and tells the cache exactly how long to remember it. Added in
     v0.6.1.
+15. `ServiceProvider.DecryptionKeys` are further keys tried after `Key` to
+    decrypt an encrypted assertion, so an SP can rotate its key without
+    refusing assertions encrypted to the other one, on every binding.
 
-Items 3, 7 to 9 and 14 are this fork's own changes. Items 3 and 7 to 9 are
+Items 3, 7 to 9, 14 and 15 are this fork's own changes. Items 3 and 7 to 9 are
 proposed upstream as [#675](https://github.com/crewjam/saml/pull/675),
 [#676](https://github.com/crewjam/saml/pull/676),
 [#677](https://github.com/crewjam/saml/pull/677) and
