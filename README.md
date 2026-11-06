@@ -56,7 +56,11 @@ which is `v0.5.1` plus three commits. On top of that, in order:
     setup instructions point at samltest.dev, because samltest.id is
     compromised.
 
-Items 3 and 7 to 9 are this fork's own changes, not yet proposed upstream.
+Items 3 and 7 to 9 are this fork's own changes. They are proposed upstream
+as [#675](https://github.com/crewjam/saml/pull/675),
+[#676](https://github.com/crewjam/saml/pull/676),
+[#677](https://github.com/crewjam/saml/pull/677) and
+[#678](https://github.com/crewjam/saml/pull/678).
 
 ## Upstream pull requests reviewed
 
