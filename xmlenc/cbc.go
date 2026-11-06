@@ -61,7 +61,8 @@ func (e CBC) Encrypt(key interface{}, plaintext []byte, _ []byte) (*etree.Elemen
 
 	plaintext = appendPadding(plaintext, block.BlockSize())
 
-	iv := make([]byte, block.BlockSize())
+	// The ciphertext is appended to the IV below.
+	iv := make([]byte, block.BlockSize(), block.BlockSize()+len(plaintext))
 	if _, err := RandReader.Read(iv); err != nil {
 		return nil, err
 	}
@@ -175,7 +176,7 @@ func init() {
 func appendPadding(buf []byte, blockSize int) []byte {
 	paddingBytes := blockSize - (len(buf) % blockSize)
 	padding := make([]byte, paddingBytes)
-	padding[len(padding)-1] = byte(paddingBytes)
+	padding[len(padding)-1] = byte(paddingBytes) //nolint:gosec // paddingBytes is at most blockSize, which is 16
 	return append(buf, padding...)
 }
 

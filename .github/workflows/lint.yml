@@ -6,15 +6,21 @@ on:
   pull_request:
     branches: [ 'main' ]
 
+permissions:
+  contents: read
+
 jobs:
   golangci:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
-          go-version: stable
+          go-version: '1.26.x'
+          check-latest: true
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.0
+          # v2.0 cannot load a module whose go directive is newer than the Go
+          # it was built with, which 1.26 is.
+          version: v2.15.0
