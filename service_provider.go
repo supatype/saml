@@ -159,7 +159,28 @@ type ServiceProvider struct {
 	// ValidateRequestID allows you to override the default request ID validation.
 	// If nil, the default request ID validation is used.
 	ValidateRequestID func(response Response, possibleRequestIDs []string) error
+
+	// ReplayCache, if set, records the assertion each accepted response is
+	// accepted for, and refuses a response whose assertion it has seen
+	// before. IdP-initiated assertions have no request ID to bind them to, so
+	// without it a captured one can be accepted again until it expires.
+	ReplayCache AssertionReplayCache
 }
+
+// AssertionReplayCache records accepted assertion IDs. Implementations must
+// be safe for concurrent use and should be shared by every server that
+// accepts assertions for the same service provider.
+type AssertionReplayCache interface {
+	// Consume records assertionID as used until expiresAt, after which no
+	// ServiceProvider check would accept the assertion anyway. It returns
+	// ErrAssertionReplayed if the ID is already recorded and has not expired,
+	// and any other error if it cannot record it, which refuses the assertion.
+	Consume(assertionID string, expiresAt time.Time) error
+}
+
+// ErrAssertionReplayed is returned by an AssertionReplayCache for an
+// assertion it has already recorded.
+var ErrAssertionReplayed = errors.New("assertion has already been used")
 
 // MaxIssueDelay is the longest allowed time between when a SAML assertion is
 // issued by the IDP and the time it is received by ParseResponse. This is used
@@ -1089,6 +1110,9 @@ func (sp *ServiceProvider) parseResponse(responseEl *etree.Element, possibleRequ
 	// contain only one assertion. This is less that fully correct, but we didn't realize that there could be more
 	// than one assertion at the time of establishing the public interface of ParseXMLResponse(), so for compatibility
 	// we return the first one.
+	if err := sp.consumeAssertion(&assertions[0]); err != nil {
+		return nil, err
+	}
 	return &assertions[0], nil
 }
 
@@ -1189,8 +1213,8 @@ func (sp *ServiceProvider) parseAssertion(assertionEl *etree.Element, possibleRe
 // the failure. (The digital signature on the assertion is not checked -- this
 // should be done before calling this function).
 func (sp *ServiceProvider) validateAssertion(assertion *Assertion, possibleRequestIDs []string, now time.Time) error {
-	if assertion.IssueInstant.Add(MaxIssueDelay).Before(now) {
-		return fmt.Errorf("expired on %s", assertion.IssueInstant.Add(MaxIssueDelay))
+	if issueDeadline(assertion).Before(now) {
+		return fmt.Errorf("expired on %s", issueDeadline(assertion))
 	}
 	if assertion.Issuer.Value != sp.IDPMetadata.EntityID {
 		return fmt.Errorf("issuer is not %q", sp.IDPMetadata.EntityID)
@@ -1227,7 +1251,7 @@ func (sp *ServiceProvider) validateAssertion(assertion *Assertion, possibleReque
 		if subjectConfirmation.SubjectConfirmationData.Recipient != sp.AcsURL.String() {
 			return fmt.Errorf("assertion SubjectConfirmation Recipient is not %s", sp.AcsURL.String())
 		}
-		if subjectConfirmation.SubjectConfirmationData.NotOnOrAfter.Add(MaxClockSkew).Before(now) {
+		if skewedDeadline(subjectConfirmation.SubjectConfirmationData.NotOnOrAfter).Before(now) {
 			return fmt.Errorf("assertion SubjectConfirmationData is expired")
 		}
 	}
@@ -1237,12 +1261,53 @@ func (sp *ServiceProvider) validateAssertion(assertion *Assertion, possibleReque
 	if assertion.Conditions.NotBefore.Add(-MaxClockSkew).After(now) {
 		return fmt.Errorf("assertion Conditions is not yet valid")
 	}
-	if assertion.Conditions.NotOnOrAfter.Add(MaxClockSkew).Before(now) {
+	if skewedDeadline(assertion.Conditions.NotOnOrAfter).Before(now) {
 		return fmt.Errorf("assertion Conditions is expired")
 	}
 
 	if err := sp.validateAudienceRestriction(assertion); err != nil {
 		return err
+	}
+	return nil
+}
+
+// issueDeadline is the last moment validateAssertion accepts assertion by its
+// IssueInstant.
+func issueDeadline(assertion *Assertion) time.Time {
+	return assertion.IssueInstant.Add(MaxIssueDelay)
+}
+
+// skewedDeadline is the last moment validateAssertion accepts a NotOnOrAfter
+// time, allowing for clock skew.
+func skewedDeadline(notOnOrAfter time.Time) time.Time {
+	return notOnOrAfter.Add(MaxClockSkew)
+}
+
+// acceptableUntil returns the last moment validateAssertion accepts assertion:
+// the earliest of the deadlines its expiry checks apply.
+func acceptableUntil(assertion *Assertion) time.Time {
+	deadline := earliest(issueDeadline(assertion), skewedDeadline(assertion.Conditions.NotOnOrAfter))
+	for _, confirmation := range assertion.Subject.SubjectConfirmations {
+		deadline = earliest(deadline, skewedDeadline(confirmation.SubjectConfirmationData.NotOnOrAfter))
+	}
+	return deadline
+}
+
+func earliest(a, b time.Time) time.Time {
+	if b.Before(a) {
+		return b
+	}
+	return a
+}
+
+// consumeAssertion records the assertion a response is accepted for in the
+// ReplayCache, if one is set, refusing it if it was accepted before.
+func (sp *ServiceProvider) consumeAssertion(assertion *Assertion) error {
+	if sp.ReplayCache == nil {
+		return nil
+	}
+	if err := sp.ReplayCache.Consume(assertion.ID, acceptableUntil(assertion)); err != nil {
+		return fmt.Errorf("assertion %q: %w", assertion.ID, err)
 	}
 	return nil
 }
