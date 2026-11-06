@@ -184,5 +184,5 @@
 //
 // # Security Issues
 //
-// Please do not report security issues in the issue tracker. Rather, please contact me directly at ross@kndr.org ([PGP Key `78B6038B3B9DFB88`](https://keybase.io/crewjam)).
+// Please do not report security issues in the issue tracker. Report them privately through the repository's [security advisories](https://github.com/supatype/saml/security/advisories/new).
 package saml

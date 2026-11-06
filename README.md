@@ -1,8 +1,122 @@
+# Supatype's maintained fork of crewjam/saml
+
+This is the SAML library [Supatype](https://github.com/supatype) runs in
+production, maintained as a fork of
+[crewjam/saml](https://github.com/crewjam/saml). Import it as
+`github.com/supatype/saml`. Use upstream instead if it is maintained again
+and carries the fixes listed below.
+
+## Why it exists
+
+Upstream's last commit was on 2025-05-09. Security pull requests have sat
+unreviewed since February 2026, and
+[GO-2026-6909](https://pkg.go.dev/vuln/GO-2026-6909), published on
+2026-11-05, affects every upstream version with no fixed release. A signed
+assertion could have its subject `NameID` read from an element in another
+XML namespace, which can sign a user in as someone else.
+
+## What it carries
+
+The fork starts from upstream commit
+[`3465403`](https://github.com/crewjam/saml/commit/346540312f721498fc75e69637d9250dd89f230b),
+which is `v0.5.1` plus three commits. On top of that, in order:
+
+1. The module path changes to `github.com/supatype/saml`.
+2. [crewjam/saml#674](https://github.com/crewjam/saml/pull/674): binds
+   `NameID`, `Conditions` and the subject confirmation elements to the
+   assertion namespace, and refuses assertions missing `Subject`,
+   `Conditions` or `SubjectConfirmationData` instead of panicking. This
+   fixes GO-2026-6909.
+3. Statements and attributes are bound to the assertion namespace too.
+   #674 left them open, so an `Attribute` in another namespace could still
+   supply the `subject-id` that many service providers identify users by.
+   `ProxyRestriction` also parses now.
+4. goxmldsig moves to v1.6.1, for CVE-2026-33487 and GHSA-qhrp-hfff-vphr,
+   following [#663](https://github.com/crewjam/saml/pull/663) and
+   [#664](https://github.com/crewjam/saml/pull/664). The other
+   dependencies move to their latest releases, so Go 1.26 is required.
+5. Signatures on assertions with more than 1000 elements validate again
+   instead of panicking, ported from
+   [grafana/saml#89](https://github.com/grafana/saml/pull/89).
+6. [crewjam/saml#659](https://github.com/crewjam/saml/pull/659): with
+   `AllowIDPInitiated` set, a present `InResponseTo` is still checked, so
+   an SP-initiated response cannot be replayed as an IdP-initiated one.
+7. Malformed ciphertext in an encrypted assertion returns an error instead
+   of panicking, and `tripledes-cbc`, which was really single DES and never
+   decrypted, is no longer offered.
+8. Assertions must carry a bearer `SubjectConfirmation` and an
+   `AudienceRestriction`, as the SAML web browser SSO profile requires.
+9. RSA PKCS#1 v1.5 key transport is no longer decrypted, because it is open
+   to padding-oracle attacks. RSA-OAEP, which SP metadata advertises, is.
+10. [crewjam/saml#646](https://github.com/crewjam/saml/pull/646): the
+    xmlenc fuzz test key is no longer compiled into every binary.
+11. CI runs vet, race-enabled tests, govulncheck and golangci-lint.
+12. A daily workflow watches upstream, described below.
+13. [crewjam/saml#668](https://github.com/crewjam/saml/pull/668): the
+    setup instructions point at samltest.dev, because samltest.id is
+    compromised.
+
+Items 3 and 7 to 9 are this fork's own changes, not yet proposed upstream.
+
+## Upstream pull requests reviewed
+
+| Pull request | Verdict | Why |
+| --- | --- | --- |
+| [#674](https://github.com/crewjam/saml/pull/674) namespace binding, GO-2026-6909 | Carried | Fixes the advisory. Incomplete for attributes, which item 3 covers. |
+| [#658](https://github.com/crewjam/saml/pull/658) KeyInfo injection | Not carried | Withdrawn by its author: goxmldsig already checks KeyInfo certificates against the trusted ones. |
+| [#659](https://github.com/crewjam/saml/pull/659) AllowIDPInitiated bypass | Carried | Closes a replay of SP-initiated responses. |
+| [#660](https://github.com/crewjam/saml/pull/660) require Destination | Not carried | The required audience and Recipient checks already bind a response to this SP. It would refuse some IdPs' valid unsigned responses. |
+| [#662](https://github.com/crewjam/saml/pull/662), [#663](https://github.com/crewjam/saml/pull/663), [#664](https://github.com/crewjam/saml/pull/664) goxmldsig v1.6.0 | Carried as item 4 | #662 also changes samlsp sessions, which is not taken. |
+| [#669](https://github.com/crewjam/saml/pull/669), [grafana/saml#89](https://github.com/grafana/saml/pull/89) large assertions | Carried as item 5 | Needed once goxmldsig v1.6.1 limits traversal. |
+| [#671](https://github.com/crewjam/saml/pull/671) more digest and AES-GCM URIs | Not carried | Lets more encrypted assertions decrypt. A compatibility change, not a security one. |
+| [#672](https://github.com/crewjam/saml/pull/672), [#673](https://github.com/crewjam/saml/pull/673) GCM encryption | Not carried | They fix encrypting, which only an identity provider does. |
+| [#646](https://github.com/crewjam/saml/pull/646) fuzz key | Carried | Also carried by posit-dev/crewjam-saml. |
+| [#668](https://github.com/crewjam/saml/pull/668) samltest.id | Carried | The domain is compromised. |
+| [#611](https://github.com/crewjam/saml/pull/611) NameID comments | Not needed | `NameID` text is already read in full around comments. |
+
+[posit-dev/crewjam-saml](https://github.com/posit-dev/crewjam-saml) carries
+only #646. [grafana/saml](https://github.com/grafana/saml) carries #89,
+taken here, and changes to logout and IdP-initiated flows that this fork's
+users do not need.
+
+## Versions
+
+Releases use ordinary semantic version tags under the new module path,
+starting at `v0.6.0`.
+
+## Watching upstream
+
+The new module path means govulncheck no longer reports crewjam/saml
+advisories to this fork's users. The `upstream-watch` workflow runs daily.
+It checks the Go vulnerability database for `github.com/crewjam/saml` and
+`github.com/russellhaering/goxmldsig`, and checks crewjam/saml for new tags,
+commits and security-looking pull requests. Anything not seen before is
+posted to the open `upstream-watch` issue, or opens one.
+
+[@nic-jennings](https://github.com/nic-jennings) acts on those issues. For
+each item:
+
+- an advisory: check whether this fork is affected, fix it here and
+  release;
+- a commit, tag or pull request: decide whether to carry it, and record
+  the decision in the table above.
+
+Then close the issue, or add the item's key to
+`.github/upstream-watch/acknowledged.txt`.
+
+## Reporting a security issue
+
+Report it privately through this repository's
+[security advisories](https://github.com/supatype/saml/security/advisories/new),
+not in the issue tracker.
+
+---
+
 # SAML
 
-[![](https://godoc.org/github.com/crewjam/saml?status.svg)](http://godoc.org/github.com/crewjam/saml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/supatype/saml.svg)](https://pkg.go.dev/github.com/supatype/saml)
 
-![Build Status](https://github.com/crewjam/saml/actions/workflows/test.yml/badge.svg)
+![Build Status](https://github.com/supatype/saml/actions/workflows/test.yml/badge.svg)
 
 Package saml contains a partial implementation of the SAML standard in golang.
 SAML is a standard for identity federation, i.e. either allowing a third party to authenticate your users or allowing third parties to rely on us to authenticate their users.
@@ -62,7 +176,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/crewjam/saml/samlsp"
+	"github.com/supatype/saml/samlsp"
 )
 
 func hello(w http.ResponseWriter, r *http.Request) {
@@ -165,4 +279,4 @@ The SAML specification is a collection of PDFs (sadly):
 
 ## Security Issues
 
-Please do not report security issues in the issue tracker. Rather, please contact me directly at ross@kndr.org ([PGP Key `78B6038B3B9DFB88`](https://keybase.io/crewjam)). If your issue is *not* a security issue, please use the issue tracker so other contributors can help.
+Please do not report security issues in the issue tracker. Report them privately through this repository's [security advisories](https://github.com/supatype/saml/security/advisories/new). If your issue is *not* a security issue, please use the issue tracker so other contributors can help.
