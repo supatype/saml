@@ -1,4 +1,4 @@
-module github.com/crewjam/saml
+module github.com/supatype/saml
 
 go 1.22
 
