@@ -83,8 +83,8 @@ func (e CBC) Encrypt(key interface{}, plaintext []byte, _ []byte) (*etree.Elemen
 // Decryptor for the EncryptedKey element. Otherwise, `key` must be a []byte of
 // length KeySize().
 func (e CBC) Decrypt(key interface{}, ciphertextEl *etree.Element) ([]byte, error) {
-	// If the key is encrypted, decrypt it.
-	if encryptedKeyEl := ciphertextEl.FindElement("./KeyInfo/EncryptedKey"); encryptedKeyEl != nil {
+	// If the key is encrypted, decrypt it, unless the caller already has.
+	if encryptedKeyEl := ciphertextEl.FindElement("./KeyInfo/EncryptedKey"); encryptedKeyEl != nil && !isContentKey(key) {
 		var err error
 		key, err = Decrypt(key, encryptedKeyEl)
 		if err != nil {

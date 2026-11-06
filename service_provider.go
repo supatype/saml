@@ -75,6 +75,13 @@ type ServiceProvider struct {
 	// *rsa.PrivateKey or an *ecdsa.PrivateKey.
 	Key crypto.Signer
 
+	// DecryptionKeys are further keys that decrypt encrypted assertions,
+	// tried in order after Key. Set them while rotating the SP key, so an IdP
+	// still encrypting to the old or already to the new key is accepted on
+	// every binding. They are used only to unwrap an EncryptedKey, never to
+	// sign.
+	DecryptionKeys []*rsa.PrivateKey
+
 	// Certificate is the RSA public part of Key.
 	Certificate   *x509.Certificate
 	Intermediates []*x509.Certificate
@@ -1161,17 +1168,29 @@ func (sp *ServiceProvider) decryptElement(encryptedEl *etree.Element) (*etree.El
 		return nil, err
 	}
 
-	var key interface{} = sp.Key
+	// The IdP wraps the content key in an EncryptedKey beside EncryptedData or
+	// inside its KeyInfo. Each SP key is tried on that unwrap only, and the
+	// content is then decrypted once.
 	keyEl := encryptedEl.FindElement("./EncryptedKey")
+	nested := false
+	if keyEl == nil {
+		keyEl = encryptedDataEl.FindElement("./KeyInfo/EncryptedKey")
+		nested = keyEl != nil
+	}
+	var contentKey interface{} = sp.Key
 	if keyEl != nil {
-		var err error
-		key, err = xmlenc.Decrypt(sp.Key, keyEl)
+		unwrapped, err := sp.unwrapWithEachKey(keyEl)
 		if err != nil {
-			return nil, fmt.Errorf("failed to decrypt key from response: %s", err)
+			if nested {
+				// Reported as xmlenc reported it before DecryptionKeys existed.
+				return nil, err
+			}
+			return nil, fmt.Errorf("failed to decrypt key from response: %w", err)
 		}
+		contentKey = unwrapped
 	}
 
-	plaintextEl, err := xmlenc.Decrypt(key, encryptedDataEl)
+	plaintextEl, err := xmlenc.Decrypt(contentKey, encryptedDataEl)
 	if err != nil {
 		return nil, err
 	}
@@ -1185,6 +1204,24 @@ func (sp *ServiceProvider) decryptElement(encryptedEl *etree.Element) (*etree.El
 		return nil, fmt.Errorf("cannot parse plaintext response %v", err)
 	}
 	return doc.Root(), nil
+}
+
+// unwrapWithEachKey decrypts the EncryptedKey keyEl with Key, then with each
+// of DecryptionKeys, until one works. Without DecryptionKeys it fails exactly
+// as decrypting with Key alone does. With them, a failure names only how many
+// keys were tried: the IdP chose which public key to encrypt to, so which
+// private key matched tells it nothing it did not know.
+func (sp *ServiceProvider) unwrapWithEachKey(keyEl *etree.Element) ([]byte, error) {
+	contentKey, err := xmlenc.Decrypt(sp.Key, keyEl)
+	if err == nil || len(sp.DecryptionKeys) == 0 {
+		return contentKey, err
+	}
+	for _, extra := range sp.DecryptionKeys {
+		if contentKey, err := xmlenc.Decrypt(extra, keyEl); err == nil {
+			return contentKey, nil
+		}
+	}
+	return nil, fmt.Errorf("no key decrypted it, of %d tried", 1+len(sp.DecryptionKeys))
 }
 
 func (sp *ServiceProvider) parseAssertion(assertionEl *etree.Element, possibleRequestIDs []string, now time.Time, signatureRequirement signatureRequirement) (*Assertion, error) {

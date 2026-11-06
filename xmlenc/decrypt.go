@@ -112,3 +112,12 @@ func validateRSAKeyIfPresent(key interface{}, encryptedKey *etree.Element) (*rsa
 	}
 	return rsaKey, nil
 }
+
+// isContentKey reports whether key is already the symmetric content key, in
+// which case an EncryptedKey in the ciphertext's KeyInfo needs no unwrapping.
+// A caller holding several key-transport keys unwraps it itself and passes the
+// result.
+func isContentKey(key interface{}) bool {
+	_, ok := key.([]byte)
+	return ok
+}

@@ -88,7 +88,8 @@ func (e GCM) Encrypt(key interface{}, plaintext []byte, nonce []byte) (*etree.El
 // Decryptor for the EncryptedKey element. Otherwise, `key` must be a []byte of
 // length KeySize().
 func (e GCM) Decrypt(key interface{}, ciphertextEl *etree.Element) ([]byte, error) {
-	if encryptedKeyEl := ciphertextEl.FindElement("./KeyInfo/EncryptedKey"); encryptedKeyEl != nil {
+	// If the key is encrypted, decrypt it, unless the caller already has.
+	if encryptedKeyEl := ciphertextEl.FindElement("./KeyInfo/EncryptedKey"); encryptedKeyEl != nil && !isContentKey(key) {
 		var err error
 		key, err = Decrypt(key, encryptedKeyEl)
 		if err != nil {
