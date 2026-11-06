@@ -87,6 +87,10 @@ func (e GCM) Encrypt(key interface{}, plaintext []byte, nonce []byte) (*etree.El
 // EncryptedKey element, then the type of `key` is determined by the registered
 // Decryptor for the EncryptedKey element. Otherwise, `key` must be a []byte of
 // length KeySize().
+//
+// A key already given as a []byte is the content key: an EncryptedKey in the
+// ciphertext's KeyInfo is then not unwrapped again. A caller holding several
+// key-transport keys unwraps it itself and passes the result.
 func (e GCM) Decrypt(key interface{}, ciphertextEl *etree.Element) ([]byte, error) {
 	// If the key is encrypted, decrypt it, unless the caller already has.
 	if encryptedKeyEl := ciphertextEl.FindElement("./KeyInfo/EncryptedKey"); encryptedKeyEl != nil && !isContentKey(key) {

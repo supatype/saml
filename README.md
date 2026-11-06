@@ -3,8 +3,10 @@
 This is the SAML library [Supatype](https://github.com/supatype) runs in
 production, maintained as a fork of
 [crewjam/saml](https://github.com/crewjam/saml). Import it as
-`github.com/supatype/saml`. Use upstream instead if it is maintained again
-and carries the fixes listed below.
+`github.com/supatype/saml`.
+
+Supatype maintains and extends it: it carries security fixes upstream has
+not released, and features upstream does not have.
 
 ## Why it exists
 
@@ -50,23 +52,41 @@ which is `v0.5.1` plus three commits. On top of that, in order:
    to padding-oracle attacks. RSA-OAEP, which SP metadata advertises, is.
 10. [crewjam/saml#646](https://github.com/crewjam/saml/pull/646): the
     xmlenc fuzz test key is no longer compiled into every binary.
-11. CI runs vet, race-enabled tests, govulncheck and golangci-lint.
+11. CI runs vet and race-enabled tests on Go 1.26 and the latest stable
+    release, plus govulncheck and golangci-lint.
 12. A daily workflow watches upstream, described below.
 13. [crewjam/saml#668](https://github.com/crewjam/saml/pull/668): the
     setup instructions point at samltest.dev, because samltest.id is
     compromised.
-14. `ServiceProvider.ReplayCache` refuses an assertion it has accepted
-    before, and tells the cache exactly how long to remember it. Added in
-    v0.6.1.
-15. `ServiceProvider.DecryptionKeys` are further keys tried after `Key` to
-    decrypt an encrypted assertion, so an SP can rotate its key without
-    refusing assertions encrypted to the other one, on every binding.
-
-Items 3, 7 to 9, 14 and 15 are this fork's own changes. Items 3 and 7 to 9 are
-proposed upstream as [#675](https://github.com/crewjam/saml/pull/675),
+Items 3 and 7 to 9 are this fork's own fixes, proposed upstream as
+[#675](https://github.com/crewjam/saml/pull/675),
 [#676](https://github.com/crewjam/saml/pull/676),
 [#677](https://github.com/crewjam/saml/pull/677) and
 [#678](https://github.com/crewjam/saml/pull/678).
+
+## Features this fork adds
+
+Both are optional fields on `ServiceProvider`; unset, the library behaves
+as it did without them. Their full contracts are in the
+[package documentation](https://pkg.go.dev/github.com/supatype/saml#ServiceProvider).
+
+- **`ReplayCache`** refuses an assertion it has accepted before. An
+  IdP-initiated assertion has no request ID to bind it to, so without it a
+  captured one can be posted again until it expires. Give it a store shared
+  by every server; the library tells it exactly how long to keep each ID.
+
+  ```go
+  sp.ReplayCache = myCache // implements saml.AssertionReplayCache
+  ```
+
+- **`DecryptionKeys`** are further keys tried after `Key` to decrypt
+  encrypted assertions, on every binding, so an SP can rotate its key while
+  IdPs encrypt to either one. `Key` still signs.
+
+  ```go
+  sp.Key = currentKey
+  sp.DecryptionKeys = []*rsa.PrivateKey{nextKey}
+  ```
 
 ## Upstream pull requests reviewed
 
@@ -91,8 +111,9 @@ users do not need.
 
 ## Versions
 
-Releases use ordinary semantic version tags under the new module path,
-starting at `v0.6.0`.
+Releases are ordinary semantic version tags on `main` under the new module
+path, starting at `v0.6.0`. A new feature is a minor release and a fix is a
+patch release.
 
 ## Watching upstream
 

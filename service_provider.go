@@ -78,8 +78,14 @@ type ServiceProvider struct {
 	// DecryptionKeys are further keys that decrypt encrypted assertions,
 	// tried in order after Key. Set them while rotating the SP key, so an IdP
 	// still encrypting to the old or already to the new key is accepted on
-	// every binding. They are used only to unwrap an EncryptedKey, never to
-	// sign.
+	// every binding. They are used only to unwrap an EncryptedKey, whether it
+	// sits beside EncryptedData or inside its KeyInfo, never to sign.
+	//
+	// When the EncryptedKey names the certificate it was encrypted to, a key
+	// that does not match it is skipped without an RSA operation. When no
+	// key fits, the error says how many keys were tried and nothing else.
+	// Metadata publishes Certificate only, so publish the other key's
+	// certificate yourself while the rotation lasts. Added in v0.7.0.
 	DecryptionKeys []*rsa.PrivateKey
 
 	// Certificate is the RSA public part of Key.
@@ -171,12 +177,14 @@ type ServiceProvider struct {
 	// accepted for, and refuses a response whose assertion it has seen
 	// before. IdP-initiated assertions have no request ID to bind them to, so
 	// without it a captured one can be accepted again until it expires.
+	// Added in v0.6.1.
 	ReplayCache AssertionReplayCache
 }
 
 // AssertionReplayCache records accepted assertion IDs. Implementations must
-// be safe for concurrent use and should be shared by every server that
-// accepts assertions for the same service provider.
+// record atomically, and must be shared by every server that accepts
+// assertions for the same service provider: a replay sent to a server that
+// did not see the first use would otherwise get through.
 type AssertionReplayCache interface {
 	// Consume records assertionID as used until expiresAt, after which no
 	// ServiceProvider check would accept the assertion anyway. It returns
@@ -186,7 +194,9 @@ type AssertionReplayCache interface {
 }
 
 // ErrAssertionReplayed is returned by an AssertionReplayCache for an
-// assertion it has already recorded.
+// assertion it has already recorded. A cache may return its own error type
+// instead, as long as errors.Is matches it to ErrAssertionReplayed; callers
+// of ParseResponse test for it the same way.
 var ErrAssertionReplayed = errors.New("assertion has already been used")
 
 // MaxIssueDelay is the longest allowed time between when a SAML assertion is
