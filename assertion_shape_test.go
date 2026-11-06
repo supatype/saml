@@ -50,6 +50,7 @@ func TestValidateAssertionMissingElements(t *testing.T) {
 	now := TimeNow()
 	sp := ServiceProvider{
 		AcsURL:      mustParseURL("https://sp.example.com/acs"),
+		MetadataURL: mustParseURL("https://sp.example.com/metadata"),
 		IDPMetadata: &EntityDescriptor{EntityID: "https://idp.example.com/"},
 	}
 	full := func() *Assertion {
@@ -57,11 +58,15 @@ func TestValidateAssertionMissingElements(t *testing.T) {
 			IssueInstant: now,
 			Issuer:       Issuer{Value: "https://idp.example.com/"},
 			Subject: &Subject{SubjectConfirmations: []SubjectConfirmation{{
+				Method: "urn:oasis:names:tc:SAML:2.0:cm:bearer",
 				SubjectConfirmationData: &SubjectConfirmationData{
 					InResponseTo: "id-1", Recipient: "https://sp.example.com/acs", NotOnOrAfter: now.Add(time.Minute),
 				},
 			}}},
-			Conditions: &Conditions{NotBefore: now.Add(-time.Minute), NotOnOrAfter: now.Add(time.Minute)},
+			Conditions: &Conditions{
+				NotBefore: now.Add(-time.Minute), NotOnOrAfter: now.Add(time.Minute),
+				AudienceRestrictions: []AudienceRestriction{{Audience: Audience{Value: "https://sp.example.com/metadata"}}},
+			},
 		}
 	}
 	assert.Check(t, sp.validateAssertion(full(), []string{"id-1"}, now))
