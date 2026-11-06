@@ -55,9 +55,12 @@ which is `v0.5.1` plus three commits. On top of that, in order:
 13. [crewjam/saml#668](https://github.com/crewjam/saml/pull/668): the
     setup instructions point at samltest.dev, because samltest.id is
     compromised.
+14. `ServiceProvider.ReplayCache` refuses an assertion it has accepted
+    before, and tells the cache exactly how long to remember it. Added in
+    v0.6.1.
 
-Items 3 and 7 to 9 are this fork's own changes. They are proposed upstream
-as [#675](https://github.com/crewjam/saml/pull/675),
+Items 3, 7 to 9 and 14 are this fork's own changes. Items 3 and 7 to 9 are
+proposed upstream as [#675](https://github.com/crewjam/saml/pull/675),
 [#676](https://github.com/crewjam/saml/pull/676),
 [#677](https://github.com/crewjam/saml/pull/677) and
 [#678](https://github.com/crewjam/saml/pull/678).

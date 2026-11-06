@@ -298,11 +298,11 @@ func TestSPCanProduceSignedRequestRedirectBinding(t *testing.T) {
 
 			redirectURL, err := s.MakeRedirectAuthenticationRequest("relayState")
 			assert.Assert(t, err)
-			// Signature we check against in the query string was validated with
-			// https://www.samltool.com/validate_authn_req.php . Once we add
-			// support for validating signed AuthN requests in the IDP implementation
-			// we can switch to testing using that.
-			golden.Assert(t, redirectURL.RawQuery, t.Name()+"_queryString")
+			// The query string is not compared byte for byte: SAMLRequest is DEFLATE
+			// output, which changes between Go releases (Go 1.27 changed it), and the
+			// signature covers those bytes. The decoded request is compared below,
+			// and the signature is verified against the SP certificate here.
+			assertRedirectSignature(t, redirectURL, test.Certificate)
 
 			decodedRequest, err := testsaml.ParseRedirectRequest(redirectURL)
 			assert.Check(t, err)
@@ -2080,4 +2080,22 @@ func TestSPInvalidResponses(t *testing.T) {
 
 	assert.Check(t, is.Error(err.(*InvalidResponseError).PrivateErr,
 		"cannot validate signature on Assertion: x509: malformed certificate"))
+}
+
+// assertRedirectSignature checks a SAML HTTP-Redirect binding URL carries an
+// RSA-SHA1 signature, made by cert's key, over its SAMLRequest, RelayState
+// and SigAlg parameters as they appear in the query string (SAMLBind §3.4.4.1).
+func assertRedirectSignature(t *testing.T, redirectURL *url.URL, cert *x509.Certificate) {
+	t.Helper()
+	signed, encodedSignature, found := strings.Cut(redirectURL.RawQuery, "&Signature=")
+	assert.Assert(t, found, "no Signature parameter in %q", redirectURL.RawQuery)
+	assert.Check(t, strings.HasPrefix(signed, "SAMLRequest="), signed)
+	assert.Check(t, strings.Contains(signed, "&RelayState=relayState&"), signed)
+	assert.Check(t, is.Equal(redirectURL.Query().Get("SigAlg"), dsig.RSASHA1SignatureMethod))
+
+	encodedSignature, err := url.QueryUnescape(encodedSignature)
+	assert.NilError(t, err)
+	signature, err := base64.StdEncoding.DecodeString(encodedSignature)
+	assert.NilError(t, err)
+	assert.Check(t, cert.CheckSignature(x509.SHA1WithRSA, []byte(signed), signature))
 }
